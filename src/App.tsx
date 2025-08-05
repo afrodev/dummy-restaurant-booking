@@ -12,6 +12,12 @@ interface BookingForm {
   specialRequests: string;
 }
 
+interface TimeSlot {
+  time: string;
+  display: string;
+  available: boolean;
+}
+
 function App() {
   const [formData, setFormData] = useState<BookingForm>({
     name: '',
@@ -26,6 +32,8 @@ function App() {
   
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errors, setErrors] = useState<Partial<BookingForm>>({});
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
 
   const validateForm = (): boolean => {
     const newErrors: Partial<BookingForm> = {};
@@ -84,11 +92,11 @@ function App() {
           console.log('Booking submitted successfully:', result);
         } else {
           console.error('Failed to submit booking:', result.error);
-          alert('Failed to submit booking. Please try again.');
+          alert(`Booking failed: ${result.error}`);
         }
       } catch (error) {
         console.error('Error submitting booking:', error);
-        alert('Failed to submit booking. Please try again.');
+        alert('Network error: Failed to submit booking. Please check your connection and try again.');
       }
     }
   };
@@ -126,6 +134,72 @@ function App() {
 
   // Get today's date for min attribute
   const today = new Date().toISOString().split('T')[0];
+
+  // Default time slots
+  const defaultTimeSlots: TimeSlot[] = [
+    { time: '17:00', display: '5:00 PM', available: true },
+    { time: '17:30', display: '5:30 PM', available: true },
+    { time: '18:00', display: '6:00 PM', available: true },
+    { time: '18:30', display: '6:30 PM', available: true },
+    { time: '19:00', display: '7:00 PM', available: true },
+    { time: '19:30', display: '7:30 PM', available: true },
+    { time: '20:00', display: '8:00 PM', available: true },
+    { time: '20:30', display: '8:30 PM', available: true },
+    { time: '21:00', display: '9:00 PM', available: true },
+    { time: '21:30', display: '9:30 PM', available: true }
+  ];
+
+  // Fetch availability for selected date
+  const fetchAvailability = async (date: string) => {
+    if (!date) return;
+    
+    setLoadingAvailability(true);
+    try {
+      const response = await fetch(`http://localhost:3001/api/availability?date=${date}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        const updatedSlots = defaultTimeSlots.map(slot => ({
+          ...slot,
+          available: data.availability[slot.time] || true
+        }));
+        setTimeSlots(updatedSlots);
+      } else {
+        setTimeSlots(defaultTimeSlots);
+      }
+    } catch (error) {
+      console.error('Error fetching availability:', error);
+      setTimeSlots(defaultTimeSlots);
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  // Update time slots when date changes
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear time selection when date changes
+    setFormData(prev => ({
+      ...prev,
+      time: ''
+    }));
+    
+    // Fetch availability for new date
+    fetchAvailability(value);
+    
+    // Clear error when user starts typing
+    if (errors[name as keyof BookingForm]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-stone-50">
@@ -261,7 +335,7 @@ function App() {
                       id="date"
                       name="date"
                       value={formData.date}
-                      onChange={handleInputChange}
+                      onChange={handleDateChange}
                       min={today}
                       className={`w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all ${
                         errors.date ? 'border-red-500' : 'border-stone-300 focus:border-amber-500'
@@ -280,21 +354,27 @@ function App() {
                       name="time"
                       value={formData.time}
                       onChange={handleInputChange}
+                      disabled={loadingAvailability}
                       className={`w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all ${
                         errors.time ? 'border-red-500' : 'border-stone-300 focus:border-amber-500'
-                      }`}
+                      } ${loadingAvailability ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                      <option value="">Select Time</option>
-                      <option value="17:00">5:00 PM</option>
-                      <option value="17:30">5:30 PM</option>
-                      <option value="18:00">6:00 PM</option>
-                      <option value="18:30">6:30 PM</option>
-                      <option value="19:00">7:00 PM</option>
-                      <option value="19:30">7:30 PM</option>
-                      <option value="20:00">8:00 PM</option>
-                      <option value="20:30">8:30 PM</option>
-                      <option value="21:00">9:00 PM</option>
-                      <option value="21:30">9:30 PM</option>
+                      <option value="">
+                        {loadingAvailability ? 'Loading availability...' : 'Select Time'}
+                      </option>
+                      {timeSlots.map((slot) => (
+                        <option 
+                          key={slot.time} 
+                          value={slot.time}
+                          disabled={!slot.available}
+                          style={{ 
+                            color: !slot.available ? '#9CA3AF' : 'inherit',
+                            backgroundColor: !slot.available ? '#F3F4F6' : 'inherit'
+                          }}
+                        >
+                          {slot.display} {!slot.available ? '(Unavailable)' : ''}
+                        </option>
+                      ))}
                     </select>
                     {errors.time && <p className="text-red-500 text-sm mt-1">{errors.time}</p>}
                   </div>

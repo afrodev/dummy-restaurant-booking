@@ -50,6 +50,47 @@ app.post('/api/book', async (req, res) => {
       }
     }
 
+    // Check availability before proceeding with booking
+    const { data: availabilityData, error: availabilityError } = await supabase
+      .from('availability')
+      .select('is_available, current_bookings, max_capacity')
+      .eq('date', bookingData.date)
+      .eq('time', bookingData.time)
+      .single();
+
+    if (availabilityError) {
+      console.error('Error checking availability:', availabilityError);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to check availability' 
+      });
+    }
+
+    if (!availabilityData) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Selected time slot does not exist' 
+      });
+    }
+
+    if (!availabilityData.is_available) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Selected time slot is not available' 
+      });
+    }
+
+    // Check if there's enough capacity for the booking
+    const requestedGuests = parseInt(bookingData.guests);
+    const remainingCapacity = availabilityData.max_capacity - availabilityData.current_bookings;
+    
+    if (requestedGuests > remainingCapacity) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Only ${remainingCapacity} seats available for this time slot` 
+      });
+    }
+
     // Generate unique booking ID
     const bookingId = generateBookingId();
     
@@ -123,7 +164,55 @@ app.post('/api/book', async (req, res) => {
   }
 });
 
+// API endpoint to check availability for a specific date
+app.get('/api/availability', async (req, res) => {
+  try {
+    const { date } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Date parameter is required' 
+      });
+    }
 
+    // Query Supabase for availability on the specified date
+    const { data, error } = await supabase
+      .from('availability')
+      .select('time, is_available')
+      .eq('date', date);
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch availability' 
+      });
+    }
+
+    // Convert to availability map
+    const availability = {};
+    data.forEach(slot => {
+      availability[slot.time] = slot.is_available;
+    });
+
+    console.log(`Availability for ${date}:`, availability);
+    
+    res.json({ 
+      success: true, 
+      date: date,
+      availability: availability
+    });
+
+  } catch (error) {
+    console.error('Error checking availability:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to check availability',
+      details: error.message 
+    });
+  }
+});
 
 // Serve the React app for all other routes
 app.get('*', (req, res) => {
