@@ -64,12 +64,32 @@ function App() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
-      setIsSubmitted(true);
-      // Here you would typically send the data to your backend
-      console.log('Booking submitted:', formData);
+      try {
+        // Send booking data to backend for database storage
+        const response = await fetch('http://localhost:3001/api/book', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          setIsSubmitted(true);
+          console.log('Booking submitted successfully:', result);
+        } else {
+          console.error('Failed to submit booking:', result.error);
+          alert('Failed to submit booking. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error submitting booking:', error);
+        alert('Failed to submit booking. Please try again.');
+      }
     }
   };
 
@@ -366,7 +386,7 @@ function App() {
                   {formData.occasion && <p><strong>Occasion:</strong> {formData.occasion}</p>}
                 </div>
                 <p className="text-green-600 mb-6">
-                  Thank you for choosing Bella Vista! We've sent a confirmation email to {formData.email}.
+                  Thank you for choosing Bella Vista! Your booking has been confirmed and saved to our system.
                   We look forward to serving you.
                 </p>
                 <button
