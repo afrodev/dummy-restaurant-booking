@@ -15,7 +15,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3001'],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -55,7 +58,7 @@ app.post('/api/book', async (req, res) => {
       .from('availability')
       .select('is_available, current_bookings, max_capacity')
       .eq('date', bookingData.date)
-      .eq('time', bookingData.time)
+      .eq('time_slot', bookingData.time)
       .single();
 
     if (availabilityError) {
@@ -80,14 +83,13 @@ app.post('/api/book', async (req, res) => {
       });
     }
 
-    // Check if there's enough capacity for the booking
-    const requestedGuests = parseInt(bookingData.guests);
+    // Check if there's capacity for one more booking (regardless of guest count)
     const remainingCapacity = availabilityData.max_capacity - availabilityData.current_bookings;
     
-    if (requestedGuests > remainingCapacity) {
+    if (remainingCapacity <= 0) {
       return res.status(400).json({ 
         success: false, 
-        error: `Only ${remainingCapacity} seats available for this time slot` 
+        error: 'This time slot is fully booked' 
       });
     }
 
@@ -110,14 +112,33 @@ app.post('/api/book', async (req, res) => {
     };
 
     // Save booking to Supabase
+    console.log('Inserting booking record:', bookingRecord);
     const { data, error } = await supabase
       .from('bookings')
       .insert([bookingRecord])
       .select();
 
     if (error) {
-      console.error('Supabase error:', error);
-      throw new Error(`Database error: ${error.message}`);
+      console.error('Supabase booking insert error:', error);
+      return res.status(500).json({ 
+        success: false, 
+        error: `Database error: ${error.message}` 
+      });
+    }
+
+    // Update availability table to increment booking count
+    const { error: updateError } = await supabase
+      .from('availability')
+      .update({ 
+        current_bookings: availabilityData.current_bookings + 1,
+        is_available: (availabilityData.current_bookings + 1) < availabilityData.max_capacity
+      })
+      .eq('date', bookingData.date)
+      .eq('time_slot', bookingData.time);
+
+    if (updateError) {
+      console.error('Error updating availability:', updateError);
+      // Note: We don't throw here as the booking was already saved
     }
 
     console.log('Booking saved to Supabase:', data);
@@ -176,11 +197,13 @@ app.get('/api/availability', async (req, res) => {
       });
     }
 
-    // Query Supabase for availability on the specified date
+    // Query Supabase for available slots on the specified date
     const { data, error } = await supabase
       .from('availability')
-      .select('time, is_available')
-      .eq('date', date);
+      .select('time_slot, is_available, current_bookings, max_capacity')
+      .eq('date', date)
+      .eq('is_available', true)
+      .order('time_slot');
 
     if (error) {
       console.error('Supabase error:', error);
@@ -190,18 +213,22 @@ app.get('/api/availability', async (req, res) => {
       });
     }
 
-    // Convert to availability map
-    const availability = {};
-    data.forEach(slot => {
-      availability[slot.time] = slot.is_available;
+    // Filter out slots that are at capacity
+    const availableSlots = data.filter(slot => {
+      const remainingCapacity = slot.max_capacity - slot.current_bookings;
+      return remainingCapacity > 0;
     });
 
-    console.log(`Availability for ${date}:`, availability);
+    // Convert to simple time array for easier frontend consumption
+    // Strip seconds from time format (17:30:00 -> 17:30)
+    const availableTimes = availableSlots.map(slot => slot.time_slot.substring(0, 5));
+
+    console.log(`Available times for ${date}:`, availableTimes);
     
     res.json({ 
       success: true, 
       date: date,
-      availability: availability
+      available_times: availableTimes
     });
 
   } catch (error) {

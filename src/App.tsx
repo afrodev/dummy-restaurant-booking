@@ -15,7 +15,6 @@ interface BookingForm {
 interface TimeSlot {
   time: string;
   display: string;
-  available: boolean;
 }
 
 function App() {
@@ -137,19 +136,19 @@ function App() {
 
   // Default time slots
   const defaultTimeSlots: TimeSlot[] = [
-    { time: '17:00', display: '5:00 PM', available: true },
-    { time: '17:30', display: '5:30 PM', available: true },
-    { time: '18:00', display: '6:00 PM', available: true },
-    { time: '18:30', display: '6:30 PM', available: true },
-    { time: '19:00', display: '7:00 PM', available: true },
-    { time: '19:30', display: '7:30 PM', available: true },
-    { time: '20:00', display: '8:00 PM', available: true },
-    { time: '20:30', display: '8:30 PM', available: true },
-    { time: '21:00', display: '9:00 PM', available: true },
-    { time: '21:30', display: '9:30 PM', available: true }
+    { time: '17:00', display: '5:00 PM' },
+    { time: '17:30', display: '5:30 PM' },
+    { time: '18:00', display: '6:00 PM' },
+    { time: '18:30', display: '6:30 PM' },
+    { time: '19:00', display: '7:00 PM' },
+    { time: '19:30', display: '7:30 PM' },
+    { time: '20:00', display: '8:00 PM' },
+    { time: '20:30', display: '8:30 PM' },
+    { time: '21:00', display: '9:00 PM' },
+    { time: '21:30', display: '9:30 PM' }
   ];
 
-  // Fetch availability for selected date
+  // Fetch availability AFTER selected date
   const fetchAvailability = async (date: string) => {
     if (!date) return;
     
@@ -158,18 +157,23 @@ function App() {
       const response = await fetch(`http://localhost:3001/api/availability?date=${date}`);
       const data = await response.json();
       
-      if (data.success) {
-        const updatedSlots = defaultTimeSlots.map(slot => ({
-          ...slot,
-          available: data.availability[slot.time] || true
-        }));
-        setTimeSlots(updatedSlots);
+      console.log('API Response:', data); // Debug log
+      
+      if (data.success && data.available_times) {
+        // Only show available time slots
+        const availableSlots = defaultTimeSlots.filter(slot => 
+          data.available_times.includes(slot.time)
+        );
+        console.log('Available slots:', availableSlots); // Debug log
+        setTimeSlots(availableSlots);
       } else {
-        setTimeSlots(defaultTimeSlots);
+        // If no available times or error, show empty list
+        console.log('No available times or error'); // Debug log
+        setTimeSlots([]);
       }
     } catch (error) {
       console.error('Error fetching availability:', error);
-      setTimeSlots(defaultTimeSlots);
+      setTimeSlots([]);
     } finally {
       setLoadingAvailability(false);
     }
@@ -354,25 +358,21 @@ function App() {
                       name="time"
                       value={formData.time}
                       onChange={handleInputChange}
-                      disabled={loadingAvailability}
+                      disabled={loadingAvailability || timeSlots.length === 0}
                       className={`w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all ${
                         errors.time ? 'border-red-500' : 'border-stone-300 focus:border-amber-500'
-                      } ${loadingAvailability ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      } ${(loadingAvailability || timeSlots.length === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <option value="">
-                        {loadingAvailability ? 'Loading availability...' : 'Select Time'}
+                        {loadingAvailability ? 'Loading availability...' : 
+                         timeSlots.length === 0 ? 'No available times' : 'Select Time'}
                       </option>
                       {timeSlots.map((slot) => (
                         <option 
                           key={slot.time} 
                           value={slot.time}
-                          disabled={!slot.available}
-                          style={{ 
-                            color: !slot.available ? '#9CA3AF' : 'inherit',
-                            backgroundColor: !slot.available ? '#F3F4F6' : 'inherit'
-                          }}
                         >
-                          {slot.display} {!slot.available ? '(Unavailable)' : ''}
+                          {slot.display}
                         </option>
                       ))}
                     </select>
